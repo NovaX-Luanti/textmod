@@ -1,8 +1,9 @@
+local SAVE_FILE = minetest.get_worldpath() .. "/textmod_data.ft"
 local MAX_TEXTS = tonumber(minetest.settings:get("textmod_max_texts") or 100)
 local DEFAULT_RANGE = tonumber(minetest.settings:get("textmod_default_range") or 200)
-
 local text_entities = {}
 
+-- Only accept HEX color codes
 local function parse_color(c)
     if c and c:match("^#%x%x%x%x%x%x$") then
         return c
@@ -12,6 +13,41 @@ end
 
 local function parse_pos(x, y, z)
     return {x = tonumber(x), y = tonumber(y), z = tonumber(z)}
+end
+
+-- Save all active texts
+local function save_texts()
+    local file = io.open(SAVE_FILE, "w")
+    if not file then return end
+    for id, data in pairs(text_entities) do
+        if data and data.obj and data.obj:get_luaentity() then
+            local pos = data.pos
+            local txt = data.obj:get_luaentity().last_text or ""
+            local color = data.obj:get_luaentity().last_color or "#FFFFFF"
+            txt = txt:gsub("\n", "\\n") -- escape newlines
+            file:write(id .. "|" .. pos.x .. "|" .. pos.y .. "|" .. pos.z .. "|" .. color .. "|" .. txt .. "\n")
+        end
+    end
+    file:close()
+end
+
+-- Load texts from file
+local function load_texts()
+    local file = io.open(SAVE_FILE, "r")
+    if not file then return end
+    for line in file:lines() do
+        local id, x, y, z, color, txt = line:match("^(%d+)|(-?%d+%.?%d*)|(-?%d+%.?%d*)|(-?%d+%.?%d*)|(#[0-9A-Fa-f]+)|(.+)$")
+        if id and x and y and z and color and txt then
+            txt = txt:gsub("\\n", "\n")
+            local pos = {x = tonumber(x), y = tonumber(y), z = tonumber(z)}
+            local entity = minetest.add_entity(pos, "textmod:floating_text")
+            if entity then
+                entity:get_luaentity():set_text(txt, color)
+                text_entities[tonumber(id)] = {obj = entity, pos = pos}
+            end
+        end
+    end
+    file:close()
 end
 
 minetest.register_entity("textmod:floating_text", {
@@ -38,6 +74,8 @@ minetest.register_entity("textmod:floating_text", {
             color = color,
             bgcolor = "#00000000"
         })
+        self.last_text = txt
+        self.last_color = color
     end,
 })
 
@@ -52,7 +90,6 @@ minetest.register_chatcommand("text", {
         end
 
         text = text:gsub("\\n", "\n")
-
         local args = {}
         for token in param:gmatch("%S+") do table.insert(args, token) end
 
@@ -83,6 +120,7 @@ minetest.register_chatcommand("text", {
             local id = #text_entities + 1
             entity:get_luaentity():set_text(text, color)
             text_entities[id] = {obj = entity, pos = pos}
+            save_texts()
             return true, "Text spawned with ID #" .. id
         end
 
@@ -104,6 +142,7 @@ minetest.register_chatcommand("remove_text", {
             if data and data.obj and data.obj:get_luaentity() then
                 data.obj:remove()
                 text_entities[id] = nil
+                save_texts()
                 return true, "Text ID #" .. id .. " removed"
             end
             return false, "ID not found"
@@ -117,9 +156,20 @@ minetest.register_chatcommand("remove_text", {
                     removed = removed + 1
                 end
             end
+            save_texts()
             return true, removed .. " text(s) removed at position"
         end
 
         return false, "Usage: /remove_text <ID> or /remove_text <x y z>"
     end
 })
+
+-- Auto-load at startup
+minetest.register_on_mods_loaded(function()
+    minetest.after(1, load_texts)
+end)
+
+-- Save on shutdown
+minetest.register_on_shutdown(function()
+    save_texts()
+end)
