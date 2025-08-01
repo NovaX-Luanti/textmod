@@ -58,7 +58,7 @@ minetest.register_entity("textmod:floating_text", {
         visual = "cube",
         textures = {"blank.png", "blank.png", "blank.png", "blank.png", "blank.png", "blank.png"},
         visual_size = {x = 0, y = 0},
-        static_save = false,
+        static_save = true,
         nametag = "",
         nametag_color = "#FFFFFF",
         show_on_minimap = false,
